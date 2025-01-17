@@ -18,29 +18,7 @@ Neste tutorial, você aprenderá como criar um cluster Kubernetes com o Kind e i
 ## Criando um cluster Kubernetes com o Kind
 
 ```
-apiVersion: kind.x-k8s.io/v1alpha4
-kind: Cluster
-networking:
-  disableDefaultCNI: true
-  kubeProxyMode: none
-nodes:
-- role: control-plane
-  kubeadmConfigPatches:
-  - |
-    kind: InitConfiguration
-    nodeRegistration:
-      kubeletExtraArgs:
-        node-labels: "ingress-ready=true"
-  extraPortMappings:
-  - containerPort: 80
-    hostPort: 80
-    protocol: TCP
-  - containerPort: 443
-    hostPort: 443
-    protocol: TCP
-- role: worker
-- role: worker
-- role: worker
+kind create cluster --config kind.yaml
 ```
 ## Obtenha o Kubeconfig
 
