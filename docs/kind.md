@@ -107,20 +107,7 @@ A saída será algo como:
 E com base nessa saída definimos o range de IPs para utilizar no arquivo de configuração do MetalLB.
 
 ```
-apiVersion: metallb.io/v1beta1
-kind: IPAddressPool
-metadata:
-  name: example
-  namespace: metallb-system
-spec:
-  addresses:
-    - 172.18.255.200-172.18.255.250
----
-apiVersion: metallb.io/v1beta1
-kind: L2Advertisement
-metadata:
-  name: empty
-  namespace: metallb-system
+kubectl apply -f metallb-config.yaml
 ```
 
 Agora vamos criar um service do tipo LoadBalancer para testar o MetalLB.
