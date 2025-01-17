@@ -20,6 +20,20 @@ diretas possível.
 ### Mudanças Incompatíveis
 -->
 
-## [0.0.1] - 2024-12-14
+## [v1.0.0] - 2025-01-17
 
-- A primeira release.
+### Adicionado
+- Configuração inicial do cluster Kubernetes usando Kind.
+- Integração com Cilium como CNI.
+- Instalação do ingress-nginx com suporte a LoadBalancer via MetalLB.
+- Script de instalação do Cilium CLI.
+- Configuração do MetalLB para balanceamento de carga de camada 2.
+
+
+### Melhorias
+- Adicionado suporte para tolerations e nodeSelector no ingress-nginx.
+- Configuração do ingress-nginx para usar LoadBalancer com MetalLB.
+
+
+### Notas
+- Certifique-se de que o Helm está instalado e configurado corretamente.
