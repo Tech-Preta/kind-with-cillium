@@ -1,0 +1,25 @@
+# CHANGELOG 
+
+Todas as mudanças notáveis neste projeto serão documentadas neste arquivo.
+
+O formato é baseado em [Keep a Changelog](http://keepachangelog.com/)
+e este projeto adere ao [Semantic Versioning](http://semver.org/).
+
+<!--
+## [Não lançado] - aaaa-mm-dd
+
+Aqui escrevemos notas de atualização para as marcas. É um esforço em equipe para torná-las o mais
+diretas possível.
+
+### Adicionado
+
+### Modificado
+
+### Corrigido
+
+### Mudanças Incompatíveis
+-->
+
+## [0.0.1] - 2024-12-14
+
+- A primeira release.
