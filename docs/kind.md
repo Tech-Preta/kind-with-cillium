@@ -1,43 +1,21 @@
-# Criando um cluster Kubernetes com o Kind, Cillium e MetalLB
+#!/bin/bash
+set -e
 
-## Introdução
+# Checagem de pré-requisitos
+command -v kind >/dev/null || { echo "Kind não instalado"; exit 1; }
+command -v helm >/dev/null || { echo "Helm não instalado"; exit 1; }
+command -v kubectl >/dev/null || { echo "kubectl não instalado"; exit 1; }
 
-O [Kind](https://kind.sigs.k8s.io/) é uma ferramenta para executar clusters Kubernetes em contêineres Docker. Ele foi projetado para uso em testes, CI e desenvolvimento. O Kind foi criado para ser uma alternativa leve e fácil de usar para executar clusters Kubernetes.
+# Apaga cluster antigo
+kind delete cluster || true
 
-O [Cilium](https://cilium.io/) é uma solução de rede e segurança para Kubernetes baseada em eBPF. Ele fornece uma solução de rede e segurança de alto desempenho, escalável e confiável para Kubernetes. O Cilium é uma alternativa ao kube-proxy e ao iptables.
-
-Neste tutorial, você aprenderá como criar um cluster Kubernetes com o Kind e instalar o Cilium para gerenciar a rede e a segurança do cluster.
-
-## Pré-requisitos
-
-- Docker
-- Kubectl
-- Kind
-- Helm
-
-## Criando um cluster Kubernetes com o Kind
-
-```
+# Cria cluster
 kind create cluster --config kind.yaml
-```
-## Obtenha o Kubeconfig
 
-```
+# Atualiza kubeconfig
 kind get kubeconfig > ~/.kube/config
-```
 
-## Verificando o cluster
-
-```
-kubectl get nodes
-kubectl get pods -n kube-system
-```
-
-Os nós workers não estarão prontos até que o Cilium seja instalado, visto que o Cilium será o responsável pela rede do cluster.
-
-## Instalando o Cilium
-
-```
+# Instala Cilium
 helm upgrade --install --namespace kube-system --repo https://helm.cilium.io cilium cilium --values - <<EOF
 kubeProxyReplacement: true
 k8sServiceHost: kind-control-plane
@@ -60,92 +38,59 @@ hubble:
     enabled: true
   ui:
     enabled: true
-    ingress:
-      enabled: true
-      annotations:
-        kubernetes.io/ingress.class: nginx
-      hosts:
-        - hubble-ui.127.0.0.1.nip.io
 EOF
-```
 
-Agora verifique o namespace `kube-system` para ver se os pods do Cilium estão em execução.
-
-```
-kubectl get pods -n kube-system
-```
-
-## Instalação do Cilium CLI
-
-Execute o comando abaixo para instalar a cli do Cilium.
-
-```
+# Instala Cilium CLI
 chmod +x install-cilium-cli.sh
 ./install-cilium-cli.sh
-cilium status --wait
-```
 
-## Instalando o MetalLB
-
-O [MetalLB](https://metallb.universe.tf/) é um controlador de balanceamento de carga de metal para Kubernetes. Ele fornece uma solução de balanceamento de carga de camada 2 para clusters Kubernetes. O MetalLB é uma alternativa ao serviço LoadBalancer do Kubernetes.
-
-```
+# Instala MetalLB
 kubectl apply -f https://raw.githubusercontent.com/metallb/metallb/v0.14.3/config/manifests/metallb-native.yaml
-```
 
-Agora vamos verificar a configuração de endereçamento IP (IPAM) da rede docker chamada kind.
+# Aguarda o controller do MetalLB ficar pronto
+kubectl rollout status -n metallb-system deployment/controller --timeout=120s
 
-```
-docker network inspect -f '{{.IPAM.Config}}' kind
-```
-A saída será algo como:
+# Descobre o range de IP da rede kind e gera o metallb-config.yaml dinamicamente
+KIND_SUBNET=$(docker network inspect kind -f '{{(index .IPAM.Config 0).Subnet}}')
+KIND_PREFIX=$(echo $KIND_SUBNET | cut -d'.' -f1-2)
+METALLB_RANGE="${KIND_PREFIX}.255.150-${KIND_PREFIX}.255.170"
 
-```
-[{fc00:f853:ccd:e793::/64   map[]} {172.18.0.0/16  172.18.0.1 map[]}]
-```
+cat > metallb-config.yaml <<EOF
+apiVersion: metallb.io/v1beta1
+kind: IPAddressPool
+metadata:
+  name: metallb-ip-pool
+  namespace: metallb-system
+spec:
+  addresses:
+    - ${METALLB_RANGE}
+---
+apiVersion: metallb.io/v1beta1
+kind: L2Advertisement
+metadata:
+  name: empty
+  namespace: metallb-system
+EOF
 
-E com base nessa saída definimos o range de IPs para utilizar no arquivo de configuração do MetalLB.
-
-```
 kubectl apply -f metallb-config.yaml
-```
 
-Agora vamos criar um service do tipo LoadBalancer para testar o MetalLB.
+# Instala Metrics Server
+kubectl apply -f https://github.com/kubernetes-sigs/metrics-server/releases/latest/download/components.yaml
 
-```
-kubectl create service loadbalancer my-lbs --tcp=80:8080
-```
+# Instala ArgoCD
+kubectl create namespace argocd || true
+kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
 
-Agora vamos verificar se o serviço foi criado e se o IP foi atribuído.
-
-```
-kubectl get svc my-lbs
-```
-
-A saída será algo como:
-
-```
-NAME         TYPE           CLUSTER-IP     EXTERNAL-IP      PORT(S)        AGE
-kubernetes   ClusterIP      10.96.0.1      <none>           443/TCP        68m
-my-lbs       LoadBalancer   10.96.187.92   172.18.255.150   80:30225/TCP   40s
-```
-
-
-
-## Instalando o Ingress Controller
-
-O Ingress Controller é responsável por gerenciar o tráfego de entrada para o cluster Kubernetes. O Ingress Controller é um componente essencial para permitir o acesso externo aos serviços em execução no cluster. 
-
-### Instalar ingress-nginx
-```
+# Instala ingress-nginx
 helm upgrade --install --namespace ingress-nginx --create-namespace --repo https://kubernetes.github.io/ingress-nginx ingress-nginx ingress-nginx --values - <<EOF
 defaultBackend:
   enabled: true
 EOF
-```
 
-### Criar um Ingress para expor o serviço do Hubble-UI
-```
+# Aguarda o ingress-nginx ficar pronto
+kubectl rollout status -n ingress-nginx deployment/ingress-nginx-controller --timeout=120s
+
+# Configura o Hubble-UI com o IP do LoadBalancer do ingress-nginx
 LB_IP=$(kubectl get svc -n ingress-nginx ingress-nginx-controller -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
 helm upgrade --namespace kube-system --repo https://helm.cilium.io cilium cilium --reuse-values --values - <<EOF
 hubble:
@@ -158,11 +103,6 @@ hubble:
       hosts:
         - hubble-ui.${LB_IP}.nip.io
 EOF
-```
 
-### Acessando o Hubble-UI
-
-```
-echo "http://hubble-ui.${LB_IP}.nip.io"
-```
-
+echo "Cluster pronto!"
+echo "Acesse o Hubble-UI em: http://hubble-ui.${LB_IP}.nip.io"

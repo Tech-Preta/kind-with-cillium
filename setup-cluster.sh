@@ -1,4 +1,3 @@
-# setup-cluster.sh
 #!/bin/bash
 set -e
 
@@ -43,6 +42,32 @@ chmod +x install-cilium-cli.sh
 
 # Instala MetalLB
 kubectl apply -f https://raw.githubusercontent.com/metallb/metallb/v0.14.3/config/manifests/metallb-native.yaml
+
+# Aguarda o controller do MetalLB ficar pronto
+kubectl rollout status -n metallb-system deployment/controller --timeout=120s
+
+# Descobre o range de IP IPv4 da rede kind e gera o metallb-config.yaml dinamicamente
+KIND_SUBNET=$(docker network inspect kind -f '{{range .IPAM.Config}}{{.Subnet}}{{end}}' | grep -Eo '([0-9]{1,3}\.){3}[0-9]{1,3}/[0-9]+' | head -n1)
+KIND_PREFIX=$(echo $KIND_SUBNET | cut -d'.' -f1-2)
+METALLB_RANGE="${KIND_PREFIX}.255.150-${KIND_PREFIX}.255.170"
+
+cat > metallb-config.yaml <<EOF
+apiVersion: metallb.io/v1beta1
+kind: IPAddressPool
+metadata:
+  name: metallb-ip-pool
+  namespace: metallb-system
+spec:
+  addresses:
+    - ${METALLB_RANGE}
+---
+apiVersion: metallb.io/v1beta1
+kind: L2Advertisement
+metadata:
+  name: empty
+  namespace: metallb-system
+EOF
+
 kubectl apply -f metallb-config.yaml
 
 # Instala Metrics Server
